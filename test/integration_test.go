@@ -547,15 +547,11 @@ func workerLoop(
 			continue
 		}
 
-		data, readErr := io.ReadAll(rr)
+		data := make([]byte, c.Length)
+		_, readErr := io.ReadFull(rr, data)
 		rr.Close()
 
 		if readErr != nil {
-			sched.MarkFailed(c.Index, true)
-			continue
-		}
-
-		if int64(len(data)) != c.Length {
 			sched.MarkFailed(c.Index, true)
 			continue
 		}

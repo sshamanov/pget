@@ -91,21 +91,29 @@ func (p *ProgressBar) Update(current int64) {
 	p.render()
 }
 
-// Done marks the progress as complete.
+// Done marks the progress as complete and prints the final summary.
 func (p *ProgressBar) Done() {
 	if p.reporter.quiet {
 		return
 	}
-	p.current = p.total
+	elapsed := time.Since(p.startTime)
 	if p.reporter.isTTY {
+		p.current = p.total
 		p.render()
 		fmt.Fprintln(p.reporter.out)
 	} else {
-		elapsed := time.Since(p.startTime)
-		speed := float64(p.total) / elapsed.Seconds()
-		fmt.Fprintf(p.reporter.out, "%s: complete %s in %s (%s)\n",
-			p.label, formatSize(p.total), formatDuration(elapsed), formatSpeed(speed))
+		speed := float64(p.current) / elapsed.Seconds()
+		fmt.Fprintf(p.reporter.out, "%s: %s %s/%s in %s (%s)\n",
+			p.label, p.completionStatus(), formatSize(p.current), formatSize(p.total),
+			formatDuration(elapsed), formatSpeed(speed))
 	}
+}
+
+func (p *ProgressBar) completionStatus() string {
+	if p.current >= p.total {
+		return "complete"
+	}
+	return "downloaded"
 }
 
 func (p *ProgressBar) render() {
@@ -120,7 +128,7 @@ func (p *ProgressBar) render() {
 			return
 		}
 		now := time.Now()
-		if now.Sub(p.lastNonTTYPrint) < 5*time.Second {
+		if now.Sub(p.lastNonTTYPrint) < 3*time.Second {
 			return
 		}
 		p.lastNonTTYPrint = now

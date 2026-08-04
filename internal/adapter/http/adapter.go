@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sshamanov/pget/internal/adapter"
@@ -45,6 +46,21 @@ func New(insecureSkipVerify bool, timeout, connectTimeout, readTimeout time.Dura
 		DialContext: (&net.Dialer{
 			Timeout:   connectTimeout,
 			KeepAlive: 30 * time.Second,
+			Control: func(network, address string, c syscall.RawConn) error {
+				// Set large socket buffers for high-BDP connections.
+				// Default 256KB limits throughput to ~40Mbps at 50ms latency.
+				var setErr error
+				err := c.Control(func(fd uintptr) {
+					setErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, 4<<20)
+					if setErr == nil {
+						setErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, 4<<20)
+					}
+				})
+				if err != nil {
+					return err
+				}
+				return setErr
+			},
 		}).DialContext,
 		// Force HTTP/1.1 — HTTP/2 multiplexing is explicitly rejected (§8.2).
 		ForceAttemptHTTP2: false,
