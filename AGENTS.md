@@ -91,7 +91,7 @@ Build with `CGO_ENABLED=0` for a fully static binary that runs on old Linux syst
 The module is `github.com/sshamanov/pget`. Users can install the binary directly:
 
 ```bash
-go install github.com/sshamanov/pget@latest
+go install github.com/sshamanov/pget/cmd/pget@latest
 ```
 
 Keep the module path and import paths consistent with this canonical form.

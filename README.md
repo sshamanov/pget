@@ -16,7 +16,7 @@ The command surface and default behavior follow GNU Wget where practical.
 ## Installation
 
 ```bash
-go install github.com/sshamanov/pget@latest
+go install github.com/sshamanov/pget/cmd/pget@latest
 ```
 
 Prebuilt static Linux AMD64 binaries are published on every push to `main`.
