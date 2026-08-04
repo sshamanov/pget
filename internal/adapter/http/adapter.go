@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sshamanov/pget/internal/adapter"
+	"github.com/sshamanov/pget/internal/adapter/http/openssl"
 )
 
 // Adapter implements adapter.Adapter for HTTP and HTTPS.
@@ -64,6 +65,23 @@ func New(insecureSkipVerify bool, timeout, connectTimeout, readTimeout time.Dura
 		}).DialContext,
 		// Force HTTP/1.1 — HTTP/2 multiplexing is explicitly rejected (§8.2).
 		ForceAttemptHTTP2: false,
+	}
+
+	// Use OpenSSL for TLS when available (closes the performance gap vs crypto/tls).
+	if openssl.IsAvailable {
+		transport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = addr
+			}
+			conn, err := openssl.Dial(network, addr, host, insecureSkipVerify)
+			if err != nil {
+				return nil, err
+			}
+			return conn, nil
+		}
+		// Clear TLSClientConfig — not used when DialTLSContext is set.
+		transport.TLSClientConfig = nil
 	}
 
 	client := &gohttp.Client{
