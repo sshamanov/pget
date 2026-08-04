@@ -38,7 +38,8 @@ func New(insecureSkipVerify bool, timeout, connectTimeout, readTimeout time.Dura
 			InsecureSkipVerify: insecureSkipVerify,
 		},
 		DisableCompression:  true,
-		MaxConnsPerHost:     0, // no limit at transport level; per-worker limiting is done by scheduler
+		MaxConnsPerHost:      0, // no limit on total connections
+		MaxIdleConnsPerHost:  100, // keep idle connections for all workers to avoid reconnect overhead
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
 		DialContext: (&net.Dialer{
@@ -55,6 +56,16 @@ func New(insecureSkipVerify bool, timeout, connectTimeout, readTimeout time.Dura
 		CheckRedirect: func(req *gohttp.Request, via []*gohttp.Request) error {
 			if len(via) >= 20 {
 				return fmt.Errorf("too many redirects")
+			}
+			// Preserve Range and Accept-Encoding headers across redirects.
+			// Go may strip these on cross-host redirects, breaking parallel download.
+			if prev := via[len(via)-1]; prev != nil {
+				if rng := prev.Header.Get("Range"); rng != "" {
+					req.Header.Set("Range", rng)
+				}
+				if ae := prev.Header.Get("Accept-Encoding"); ae != "" {
+					req.Header.Set("Accept-Encoding", ae)
+				}
 			}
 			// Strip credentials on cross-origin redirect.
 			if req.URL.User != nil {

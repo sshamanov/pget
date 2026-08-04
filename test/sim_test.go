@@ -188,13 +188,13 @@ func TestSim_ConnectionCounts(t *testing.T) {
 				SplitSize:           splitSize,
 				MaxTries:             3,
 			}
-			sched := schedule.New(cfg, chunks, nil)
+			sched := schedule.New(context.Background(), cfg, chunks, nil)
 
 			validator := result.ETag
 			errCh := make(chan error, conns)
 			for slot := 0; slot < conns; slot++ {
 				go func(slot int) {
-					errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+					errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 				}(slot)
 			}
 
@@ -275,14 +275,14 @@ func TestSim_HeterogeneousConnections(t *testing.T) {
 		SplitSize:           splitSize,
 		MaxTries:             3,
 	}
-	sched := schedule.New(cfg2, chunks, nil)
+	sched := schedule.New(context.Background(), cfg2, chunks, nil)
 
 	validator := result.ETag
 	conns := 4
 	errCh := make(chan error, conns)
 	for slot := 0; slot < conns; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 		}(slot)
 	}
 
@@ -361,14 +361,14 @@ func TestSim_StalledChunk(t *testing.T) {
 		SplitSize:           splitSize,
 		MaxTries:             3,
 	}
-	sched := schedule.New(cfg2, chunks, nil)
+	sched := schedule.New(context.Background(), cfg2, chunks, nil)
 
 	validator := result.ETag
 	conns := 8
 	errCh := make(chan error, conns)
 	for slot := 0; slot < conns; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 		}(slot)
 	}
 
@@ -439,7 +439,7 @@ func TestSim_ParallelStreamWithLatency(t *testing.T) {
 		MaxTries:             3,
 		StreamMode:          true,
 	}
-	sched := schedule.New(cfg2, chunks, streamSink)
+	sched := schedule.New(context.Background(), cfg2, chunks, streamSink)
 
 	var buf bytes.Buffer
 	writeErr := make(chan error, 1)
@@ -452,7 +452,7 @@ func TestSim_ParallelStreamWithLatency(t *testing.T) {
 	errCh := make(chan error, conns)
 	for slot := 0; slot < conns; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, nil, streamSink)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, nil, streamSink, nil)
 		}(slot)
 	}
 
@@ -525,13 +525,13 @@ func TestSim_VeryLargeChunks(t *testing.T) {
 				SplitSize:           tt.splitSize,
 				MaxTries:             3,
 			}
-			sched := schedule.New(cfg, chunks, nil)
+			sched := schedule.New(context.Background(), cfg, chunks, nil)
 
 			validator := result.ETag
 			errCh := make(chan error, tt.conns)
 			for slot := 0; slot < tt.conns; slot++ {
 				go func(slot int) {
-					errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+					errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 				}(slot)
 			}
 
@@ -608,14 +608,14 @@ func TestSim_ConnectionAdmissionFailure(t *testing.T) {
 		SplitSize:           splitSize,
 		MaxTries:             3,
 	}
-	sched := schedule.New(cfg2, chunks, nil)
+	sched := schedule.New(context.Background(), cfg2, chunks, nil)
 
 	validator := result.ETag
 	conns := 4
 	errCh := make(chan error, conns)
 	for slot := 0; slot < conns; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 		}(slot)
 	}
 
@@ -693,7 +693,7 @@ func TestSim_SlowerThanExpectedChunk(t *testing.T) {
 		SplitSize:           splitSize,
 		MaxTries:             3,
 	}
-	sched := schedule.New(cfg2, chunks, nil)
+	sched := schedule.New(context.Background(), cfg2, chunks, nil)
 
 	validator := result.ETag
 	conns := 4
@@ -701,7 +701,7 @@ func TestSim_SlowerThanExpectedChunk(t *testing.T) {
 	start := time.Now()
 	for slot := 0; slot < conns; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 		}(slot)
 	}
 

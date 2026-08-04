@@ -61,12 +61,13 @@ func (r *Reporter) Error(format string, args ...interface{}) {
 
 // ProgressBar renders a simple progress bar.
 type ProgressBar struct {
-	reporter  *Reporter
-	total     int64
-	current   int64
-	startTime time.Time
-	lastPrint time.Time
-	label     string
+	reporter        *Reporter
+	total           int64
+	current         int64
+	startTime       time.Time
+	lastPrint       time.Time
+	lastNonTTYPrint time.Time
+	label           string
 }
 
 // NewProgressBar creates a progress bar for the given total size.
@@ -92,10 +93,18 @@ func (p *ProgressBar) Update(current int64) {
 
 // Done marks the progress as complete.
 func (p *ProgressBar) Done() {
+	if p.reporter.quiet {
+		return
+	}
 	p.current = p.total
-	p.render()
 	if p.reporter.isTTY {
+		p.render()
 		fmt.Fprintln(p.reporter.out)
+	} else {
+		elapsed := time.Since(p.startTime)
+		speed := float64(p.total) / elapsed.Seconds()
+		fmt.Fprintf(p.reporter.out, "%s: complete %s in %s (%s)\n",
+			p.label, formatSize(p.total), formatDuration(elapsed), formatSpeed(speed))
 	}
 }
 
@@ -105,14 +114,31 @@ func (p *ProgressBar) render() {
 	}
 
 	if !p.reporter.isTTY {
-		// Non-TTY: periodic line output.
-		if p.current == p.total {
-			fmt.Fprintf(p.reporter.out, "%s: complete (%d bytes)\n", p.label, p.total)
+		// Non-TTY: print a status line at most every 5 seconds.
+		// Done() handles the final completion message.
+		if p.current >= p.total {
+			return
 		}
+		now := time.Now()
+		if now.Sub(p.lastNonTTYPrint) < 5*time.Second {
+			return
+		}
+		p.lastNonTTYPrint = now
+
+		elapsed := time.Since(p.startTime)
+		speed := float64(p.current) / elapsed.Seconds()
+		ratio := float64(p.current) / float64(p.total)
+		eta := "---"
+		if speed > 0 {
+			remaining := float64(p.total-p.current) / speed
+			eta = formatDuration(time.Duration(remaining) * time.Second)
+		}
+		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s %s ETA %s\n",
+			p.label, int(ratio*100), formatSize(p.current), formatSize(p.total), formatSpeed(speed), eta)
 		return
 	}
 
-	// TTY: progress bar.
+	// TTY: animated progress bar.
 	ratio := float64(p.current) / float64(p.total)
 	if p.total == 0 {
 		ratio = 0
@@ -140,8 +166,8 @@ func (p *ProgressBar) render() {
 		eta = formatDuration(time.Duration(remaining) * time.Second)
 	}
 
-	fmt.Fprintf(p.reporter.out, "\r%s [%s] %d%% %s %s  ",
-		p.label, bar, int(ratio*100), formatSize(p.current), eta)
+	fmt.Fprintf(p.reporter.out, "\r%s [%s] %d%% %s/%s %s ETA %s  ",
+		p.label, bar, int(ratio*100), formatSize(p.current), formatSize(p.total), formatSpeed(speed), eta)
 }
 
 func formatSize(n int64) string {
@@ -166,4 +192,17 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
 	}
 	return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+}
+
+func formatSpeed(bytesPerSec float64) string {
+	switch {
+	case bytesPerSec >= 1<<30:
+		return fmt.Sprintf("%.1fGB/s", bytesPerSec/(1<<30))
+	case bytesPerSec >= 1<<20:
+		return fmt.Sprintf("%.1fMB/s", bytesPerSec/(1<<20))
+	case bytesPerSec >= 1<<10:
+		return fmt.Sprintf("%.1fKB/s", bytesPerSec/(1<<10))
+	default:
+		return fmt.Sprintf("%.0fB/s", bytesPerSec)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -110,14 +111,14 @@ func TestE2E_ParallelFileDownload(t *testing.T) {
 		SplitSize:           splitSize,
 		MaxTries:             3,
 	}
-	sched := schedule.New(cfg, chunks, nil)
+	sched := schedule.New(context.Background(), cfg, chunks, nil)
 
 	// Run workers.
 	validator := result.ETag
 	errCh := make(chan error, 4)
 	for slot := 0; slot < 4; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, fs, nil, nil)
 		}(slot)
 	}
 
@@ -175,7 +176,7 @@ func TestE2E_ParallelStreamDownload(t *testing.T) {
 		MaxTries:             3,
 		StreamMode:          true,
 	}
-	sched := schedule.New(cfg, chunks, streamSink)
+	sched := schedule.New(context.Background(), cfg, chunks, streamSink)
 
 	var buf bytes.Buffer
 	writeErr := make(chan error, 1)
@@ -187,7 +188,7 @@ func TestE2E_ParallelStreamDownload(t *testing.T) {
 	errCh := make(chan error, 4)
 	for slot := 0; slot < 4; slot++ {
 		go func(slot int) {
-			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, nil, streamSink)
+			errCh <- workerLoop(ctx, sched, slot, srv.URL, httpAdapter, opts, validator, nil, streamSink, nil)
 		}(slot)
 	}
 
@@ -462,7 +463,7 @@ func TestE2E_SchedulerPressureReduction(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	sched := schedule.New(cfg, chunks, nil)
+	sched := schedule.New(context.Background(), cfg, chunks, nil)
 	defer sched.Cancel()
 
 	initial := sched.EffectiveConcurrency()
@@ -486,7 +487,7 @@ func TestE2E_SchedulerRetryExhaustion(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             2,
 	}
-	sched := schedule.New(cfg, chunks, nil)
+	sched := schedule.New(context.Background(), cfg, chunks, nil)
 	defer sched.Cancel()
 
 	c, _ := sched.NextAssignment(0)
@@ -515,8 +516,15 @@ func workerLoop(
 	validator string,
 	fileSink sink.FileSink,
 	streamSink sink.StreamSink,
+	progressBytes *atomic.Int64,
 ) error {
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		c, err := sched.NextAssignment(slot)
 		if err != nil {
 			return err

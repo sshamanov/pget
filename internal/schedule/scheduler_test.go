@@ -1,6 +1,7 @@
 package schedule
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ func TestScheduler_AssignAllChunks(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	assigned := make(map[int]bool)
@@ -56,7 +57,7 @@ func TestScheduler_ContinuousAssignment(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	// Assign first two chunks.
@@ -81,7 +82,7 @@ func TestScheduler_RetryExhaustion(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             2,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	// First attempt.
@@ -115,7 +116,7 @@ func TestScheduler_PressureReduction(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	initial := s.EffectiveConcurrency()
@@ -138,7 +139,7 @@ func TestScheduler_AdmissionFailure(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	initial := s.EffectiveConcurrency()
@@ -160,7 +161,7 @@ func TestScheduler_Progress(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	completed, total := s.Progress()
@@ -183,7 +184,7 @@ func TestScheduler_NonRetryableFailure(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	c, _ := s.NextAssignment(0)
@@ -226,7 +227,7 @@ func TestRollingMedianDuration(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	// Before any completions, median should be 0.
@@ -254,7 +255,7 @@ func TestScheduler_ActiveCount(t *testing.T) {
 		SplitSize:            100,
 		MaxTries:             3,
 	}
-	s := New(cfg, chunks, nil)
+	s := New(context.Background(), cfg, chunks, nil)
 	defer s.Cancel()
 
 	if s.ActiveCount() != 0 {

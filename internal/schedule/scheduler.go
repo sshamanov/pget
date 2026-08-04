@@ -54,9 +54,10 @@ type Scheduler struct {
 	cancel context.CancelFunc
 }
 
-// New creates a new scheduler.
-func New(cfg Config, chunks []chunk.Chunk, streamSink sink.StreamSink) *Scheduler {
-	ctx, cancel := context.WithCancel(context.Background())
+// New creates a new scheduler. The parent context is used for cancellation;
+// when it is cancelled, all blocking NextAssignment calls return.
+func New(parentCtx context.Context, cfg Config, chunks []chunk.Chunk, streamSink sink.StreamSink) *Scheduler {
+	ctx, cancel := context.WithCancel(parentCtx)
 
 	workers := make([]*WorkerStats, cfg.RequestedConnections)
 	for i := range workers {

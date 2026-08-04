@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sshamanov/pget/internal/adapter"
 	gohttp "github.com/sshamanov/pget/internal/adapter/http"
 	"github.com/sshamanov/pget/internal/chunk"
 	"github.com/sshamanov/pget/internal/cli"
+	"github.com/sshamanov/pget/internal/progress"
 	"github.com/sshamanov/pget/internal/schedule"
 	"github.com/sshamanov/pget/internal/sidecar"
 	"github.com/sshamanov/pget/internal/sink"
@@ -343,10 +345,38 @@ func (r *Runner) downloadParallelFile(
 		MaxTries:            r.plan.MaxTries,
 		StreamMode:          false,
 	}
-	sched := schedule.New(cfg, pendingChunks, nil)
+	sched := schedule.New(ctx, cfg, pendingChunks, nil)
 
-	ec := r.runWorkers(ctx, sched, urlStr, httpAdapter, adapterOpts, result, fs, nil)
+	// Set up progress reporting.
+	reporter := progress.NewReporter(r.plan.Quiet, r.plan.NoVerbose, r.plan.ProgressType)
+	var progressBytes atomic.Int64
+	var bar *progress.ProgressBar
+	progressDone := make(chan struct{})
+
+	if result.Size > 0 {
+		bar = progress.NewProgressBar(reporter, result.Size, displayURL)
+		go func() {
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-progressDone:
+					return
+				case <-ticker.C:
+					bar.Update(progressBytes.Load())
+				}
+			}
+		}()
+	}
+
+	ec := r.runWorkers(ctx, sched, urlStr, httpAdapter, adapterOpts, result, fs, nil, &progressBytes)
 	*outputBaseOffset += result.Size
+
+	// Finalize progress bar.
+	if bar != nil {
+		close(progressDone)
+		bar.Done()
+	}
 
 	if ec == ExitSuccess {
 		modTime := result.Meta.ModTime
@@ -382,14 +412,36 @@ func (r *Runner) downloadParallelStream(
 		MaxTries:            r.plan.MaxTries,
 		StreamMode:          true,
 	}
-	sched := schedule.New(cfg, chunks, streamSink)
+	sched := schedule.New(ctx, cfg, chunks, streamSink)
 
 	writeErr := make(chan error, 1)
 	go func() {
 		writeErr <- streamSink.WriteTo(ctx, w)
 	}()
 
-	ec := r.runWorkers(ctx, sched, urlStr, httpAdapter, adapterOpts, result, nil, streamSink)
+	// Set up progress reporting.
+	reporter := progress.NewReporter(r.plan.Quiet, r.plan.NoVerbose, r.plan.ProgressType)
+	var progressBytes atomic.Int64
+	var bar *progress.ProgressBar
+	progressDone := make(chan struct{})
+
+	if result.Size > 0 {
+		bar = progress.NewProgressBar(reporter, result.Size, displayURL)
+		go func() {
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-progressDone:
+					return
+				case <-ticker.C:
+					bar.Update(progressBytes.Load())
+				}
+			}
+		}()
+	}
+
+	ec := r.runWorkers(ctx, sched, urlStr, httpAdapter, adapterOpts, result, nil, streamSink, &progressBytes)
 
 	// Signal the writer that all chunks are done.
 	streamSink.Close()
@@ -397,6 +449,12 @@ func (r *Runner) downloadParallelStream(
 	if werr := <-writeErr; werr != nil && ec == ExitSuccess {
 		fmt.Fprintf(os.Stderr, "pget: write error: %v\n", werr)
 		return ExitIOError
+	}
+
+	// Finalize progress bar.
+	if bar != nil {
+		close(progressDone)
+		bar.Done()
 	}
 
 	return ec
@@ -447,10 +505,40 @@ func (r *Runner) downloadSequential(
 	}
 	defer rc.Close()
 
-	n, err := io.Copy(w, rc)
+	// Set up progress reporting for sequential download.
+	reporter := progress.NewReporter(r.plan.Quiet, r.plan.NoVerbose, r.plan.ProgressType)
+	var progressBytes atomic.Int64
+	var bar *progress.ProgressBar
+	progressDone := make(chan struct{})
+
+	if result.Size > 0 {
+		bar = progress.NewProgressBar(reporter, result.Size, displayURL)
+		go func() {
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-progressDone:
+					return
+				case <-ticker.C:
+					bar.Update(progressBytes.Load())
+				}
+			}
+		}()
+	}
+
+	// Wrap reader to track progress.
+	pr := &progressReader{rc: rc, tracker: &progressBytes}
+	n, err := io.Copy(w, pr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pget: download error: %v\n", err)
 		return ExitNetworkFail
+	}
+
+	// Finalize progress bar.
+	if bar != nil {
+		close(progressDone)
+		bar.Done()
 	}
 
 	// Apply modification time.
@@ -475,6 +563,7 @@ func (r *Runner) runWorkers(
 	result *adapter.ProbeResult,
 	fileSink sink.FileSink,
 	streamSink sink.StreamSink,
+	progressBytes *atomic.Int64,
 ) ExitCode {
 	validator := result.ETag
 	if validator == "" {
@@ -484,7 +573,7 @@ func (r *Runner) runWorkers(
 	errCh := make(chan error, r.plan.Connections)
 	for slot := 0; slot < r.plan.Connections; slot++ {
 		go func(slot int) {
-			errCh <- r.workerLoop(ctx, sched, slot, urlStr, httpAdapter, adapterOpts, validator, fileSink, streamSink)
+			errCh <- r.workerLoop(ctx, sched, slot, urlStr, httpAdapter, adapterOpts, validator, fileSink, streamSink, progressBytes)
 		}(slot)
 	}
 
@@ -527,16 +616,25 @@ func (r *Runner) workerLoop(
 	validator string,
 	fileSink sink.FileSink,
 	streamSink sink.StreamSink,
+	progressBytes *atomic.Int64,
 ) error {
 	for {
+		// Check for context cancellation (Ctrl+C).
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		// Check for speculative duplicate opportunity first.
 		var isHedge bool
 		var c *chunk.Chunk
 		var err error
+		var hedgeSlot int
 
 		if streamSink != nil {
 			if hedgeIdx := sched.HedgeEligible(); hedgeIdx >= 0 {
-				c, hedgeSlot := sched.StartHedge(hedgeIdx)
+				c, hedgeSlot = sched.StartHedge(hedgeIdx)
 				if c != nil {
 					isHedge = true
 					slot = hedgeSlot
@@ -610,6 +708,7 @@ func (r *Runner) workerLoop(
 			sched.CancelHedge(c.Index)
 		}
 
+		progressBytes.Add(int64(len(data)))
 		sched.OnWorkerSuccess(slot, c.Length, time.Since(c.StartTime))
 		sched.MarkComplete(c.Index)
 	}
@@ -657,4 +756,16 @@ func decodeBitmap(encoded string, minSize int) ([]bool, error) {
 // encodeBitmap is shared with sidecar for resume support.
 func encodeBitmap(bitmap []bool) string {
 	return sidecar.EncodeBitmap(bitmap)
+}
+
+// progressReader wraps an io.Reader and tracks bytes read in an atomic counter.
+type progressReader struct {
+	rc      io.Reader
+	tracker *atomic.Int64
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.rc.Read(p)
+	r.tracker.Add(int64(n))
+	return n, err
 }
