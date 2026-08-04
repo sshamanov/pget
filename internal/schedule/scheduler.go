@@ -102,9 +102,12 @@ func (s *Scheduler) Context() context.Context {
 	return s.ctx
 }
 
-// Cancel cancels the scheduler and all workers.
+// Cancel cancels the scheduler and wakes all waiting workers.
 func (s *Scheduler) Cancel() {
+	s.mu.Lock()
 	s.cancel()
+	s.mu.Unlock()
+	s.cond.Broadcast()
 }
 
 // NextAssignment returns the next chunk assignment, or blocks until one is available.

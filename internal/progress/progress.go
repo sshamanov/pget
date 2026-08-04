@@ -5,10 +5,52 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
 )
+
+// termWidth returns the terminal width in columns, defaulting to 80.
+func termWidth() int {
+	if s := os.Getenv("COLUMNS"); s != "" {
+		var w int
+		if _, err := fmt.Sscanf(s, "%d", &w); err == nil && w > 0 {
+			return w
+		}
+	}
+	var ws struct {
+		row, col, xpixel, ypixel uint16
+	}
+	if _, _, err := syscall.Syscall(syscall.SYS_IOCTL, os.Stderr.Fd(), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&ws))); err == 0 {
+		if ws.col > 0 {
+			return int(ws.col)
+		}
+	}
+	return 80
+}
+
+// shortLabel truncates a label to maxLen characters, adding "…" when truncated.
+func shortLabel(label string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if len(label) <= maxLen {
+		return label
+	}
+	if maxLen <= 1 {
+		return "…"
+	}
+	return label[:maxLen-1] + "…"
+}
+
+// spaces returns a string of n spaces.
+func spaces(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat(" ", n)
+}
 
 // isatty checks if the given file descriptor is a terminal.
 func isatty(fd uintptr) bool {
@@ -19,11 +61,11 @@ func isatty(fd uintptr) bool {
 
 // Reporter formats and emits progress information.
 type Reporter struct {
-	quiet    bool
-	noVerbose bool
+	quiet        bool
+	noVerbose    bool
 	progressType string
-	isTTY    bool
-	out      io.Writer
+	isTTY        bool
+	out          io.Writer
 }
 
 // NewReporter creates a progress reporter.
@@ -68,15 +110,17 @@ type ProgressBar struct {
 	lastPrint       time.Time
 	lastNonTTYPrint time.Time
 	label           string
+	connections     int
 }
 
 // NewProgressBar creates a progress bar for the given total size.
-func NewProgressBar(reporter *Reporter, total int64, label string) *ProgressBar {
+func NewProgressBar(reporter *Reporter, total int64, label string, connections int) *ProgressBar {
 	return &ProgressBar{
-		reporter:  reporter,
-		total:     total,
-		startTime: time.Now(),
-		label:     label,
+		reporter:    reporter,
+		total:       total,
+		startTime:   time.Now(),
+		label:       label,
+		connections: connections,
 	}
 }
 
@@ -122,8 +166,6 @@ func (p *ProgressBar) render() {
 	}
 
 	if !p.reporter.isTTY {
-		// Non-TTY: print a status line at most every 5 seconds.
-		// Done() handles the final completion message.
 		if p.current >= p.total {
 			return
 		}
@@ -141,41 +183,70 @@ func (p *ProgressBar) render() {
 			remaining := float64(p.total-p.current) / speed
 			eta = formatDuration(time.Duration(remaining) * time.Second)
 		}
-		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s %s ETA %s\n",
-			p.label, int(ratio*100), formatSize(p.current), formatSize(p.total), formatSpeed(speed), eta)
+		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s CN:%d %s ETA %s %s\n",
+			p.label, int(ratio*100), formatSize(p.current), formatSize(p.total),
+			p.connections, formatSpeed(speed), eta, formatDuration(elapsed))
 		return
 	}
 
-	// TTY: animated progress bar.
+	// TTY: animated progress bar, sized to fit terminal width.
 	ratio := float64(p.current) / float64(p.total)
 	if p.total == 0 {
 		ratio = 0
 	}
-	width := 30
-	filled := int(ratio * float64(width))
 
 	elapsed := time.Since(p.startTime)
 	speed := float64(p.current) / elapsed.Seconds()
 
-	bar := ""
-	for i := 0; i < width; i++ {
-		if i < filled {
-			bar += "="
-		} else if i == filled {
-			bar += ">"
-		} else {
-			bar += " "
-		}
-	}
-
+	pctStr := fmt.Sprintf("%d%%", int(ratio*100))
+	sizeStr := fmt.Sprintf("%s/%s", formatSize(p.current), formatSize(p.total))
+	speedStr := formatSpeed(speed)
+	durStr := formatDuration(elapsed)
 	eta := "---"
 	if speed > 0 {
 		remaining := float64(p.total-p.current) / speed
 		eta = formatDuration(time.Duration(remaining) * time.Second)
 	}
 
-	fmt.Fprintf(p.reporter.out, "\r%s [%s] %d%% %s/%s %s ETA %s  ",
-		p.label, bar, int(ratio*100), formatSize(p.current), formatSize(p.total), formatSpeed(speed), eta)
+	// Line layout: "\r" + label + " CN:" + conns + " [" + bar + "]" + stats
+	// Stats part after bar: " " + pct + " " + size + " " + speed + " ETA " + eta + " " + dur + "  "
+	connStr := fmt.Sprintf(" CN:%d", p.connections)
+	statsPart := fmt.Sprintf(" %s %s %s ETA %s %s  ", pctStr, sizeStr, speedStr, eta, durStr)
+
+	tw := termWidth()
+	// Overhead: \r(1) + label + connStr + " ["(2) + "]"(1) + statsPart
+	overhead := 1 + len(connStr) + 3 + len(statsPart)
+
+	available := tw - overhead // space for label + bar
+
+	barWidth := available
+	if barWidth < 4 {
+		barWidth = 4
+	}
+	if barWidth > 30 {
+		barWidth = 30
+	}
+
+	maxLabel := available - barWidth
+	label := shortLabel(p.label, maxLabel)
+
+	filled := int(ratio * float64(barWidth))
+	bar := make([]byte, barWidth)
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar[i] = '='
+		} else if i == filled {
+			bar[i] = '>'
+		} else {
+			bar[i] = ' '
+		}
+	}
+
+	line := fmt.Sprintf("\r%s%s [%s]%s", label, connStr, string(bar), statsPart)
+	if len(line) < tw {
+		line += spaces(tw - len(line))
+	}
+	fmt.Fprint(p.reporter.out, line)
 }
 
 func formatSize(n int64) string {

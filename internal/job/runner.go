@@ -354,7 +354,7 @@ func (r *Runner) downloadParallelFile(
 	progressDone := make(chan struct{})
 
 	if result.Size > 0 {
-		bar = progress.NewProgressBar(reporter, result.Size, displayURL)
+		bar = progress.NewProgressBar(reporter, result.Size, progressLabel(displayURL), r.plan.Connections)
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
@@ -426,7 +426,7 @@ func (r *Runner) downloadParallelStream(
 	progressDone := make(chan struct{})
 
 	if result.Size > 0 {
-		bar = progress.NewProgressBar(reporter, result.Size, displayURL)
+		bar = progress.NewProgressBar(reporter, result.Size, progressLabel(displayURL), r.plan.Connections)
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
@@ -512,7 +512,7 @@ func (r *Runner) downloadSequential(
 	progressDone := make(chan struct{})
 
 	if result.Size > 0 {
-		bar = progress.NewProgressBar(reporter, result.Size, displayURL)
+		bar = progress.NewProgressBar(reporter, result.Size, progressLabel(displayURL), r.plan.Connections)
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
@@ -569,6 +569,13 @@ func (r *Runner) runWorkers(
 	if validator == "" {
 		validator = result.LastModified
 	}
+
+	// Propagate root context cancellation to the scheduler so that
+	// workers blocked in cond.Wait() are woken up immediately.
+	go func() {
+		<-ctx.Done()
+		sched.Cancel()
+	}()
 
 	errCh := make(chan error, r.plan.Connections)
 	for slot := 0; slot < r.plan.Connections; slot++ {
@@ -720,6 +727,26 @@ func resolveFilename(result *adapter.ProbeResult, displayURL string) string {
 		}
 	}
 	return "index.html"
+}
+
+// progressLabel extracts a short label for the progress bar from a URL.
+func progressLabel(urlStr string) string {
+	// Strip query string and fragment.
+	u := urlStr
+	if idx := strings.Index(u, "?"); idx >= 0 {
+		u = u[:idx]
+	}
+	if idx := strings.Index(u, "#"); idx >= 0 {
+		u = u[:idx]
+	}
+	// Extract the last path segment.
+	if idx := strings.LastIndex(u, "/"); idx >= 0 {
+		name := u[idx+1:]
+		if name != "" {
+			return name
+		}
+	}
+	return u
 }
 
 func sanitizeDisplayURL(urlStr string) string {
