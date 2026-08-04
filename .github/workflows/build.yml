@@ -1,0 +1,58 @@
+name: Build and Upload
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  FILESERVICE_URL: ${{ vars.FILESERVICE_URL }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run tests
+        run: go test -race ./...
+
+      - name: Build binary
+        run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -ldflags="-s -w -X github.com/sshamanov/pget/internal/version.Version=main -X github.com/sshamanov/pget/internal/version.Commit=$COMMIT" \
+            -o bin/pget .
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pget
+          path: bin/pget
+
+      - name: Upload binary to file service
+        if: ${{ github.event_name == 'push' && env.FILESERVICE_URL != '' }}
+        env:
+          FILESERVICE_TOKEN: ${{ secrets.FILESERVICE_TOKEN }}
+        run: |
+          file_hash=$(sha256sum bin/pget | cut -d' ' -f1)
+
+          curl -fsS -X POST "${FILESERVICE_URL}" \
+            -H "Authorization: Bearer ${FILESERVICE_TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            -H "X-Package-Name: pget" \
+            -H "X-Package-Version: ${{ github.sha }}" \
+            -H "X-Package-Hash: sha256:${file_hash}" \
+            -H "X-Package-Commit: ${{ github.sha }}" \
+            -H "X-Package-Source: ${{ github.server_url }}/${{ github.repository }}" \
+            -H "X-Package-Description: Wget-style parallel downloader — static Linux AMD64 binary" \
+            -H "X-Package-Run: ${{ github.run_number }}" \
+            --data-binary "@bin/pget" \
+            || echo "WARN: upload of pget failed"
+
+          echo "Uploaded pget sha256:${file_hash} run:${{ github.run_number }}"

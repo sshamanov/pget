@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    network_mode: host
+    volumes:
+      - .:/app
+    working_dir: /app
