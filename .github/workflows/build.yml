@@ -27,7 +27,7 @@ jobs:
           COMMIT=$(git rev-parse --short HEAD)
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go build -ldflags="-s -w -X github.com/sshamanov/pget/internal/version.Version=main -X github.com/sshamanov/pget/internal/version.Commit=$COMMIT" \
-            -o bin/pget .
+            -o bin/pget ./cmd/pget/
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
