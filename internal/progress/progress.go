@@ -111,6 +111,7 @@ type ProgressBar struct {
 	lastNonTTYPrint time.Time
 	label           string
 	connections     int
+	connFn          func() int // if non-nil, returns live active connection count
 }
 
 // NewProgressBar creates a progress bar for the given total size.
@@ -122,6 +123,12 @@ func NewProgressBar(reporter *Reporter, total int64, label string, connections i
 		label:       label,
 		connections: connections,
 	}
+}
+
+// SetConnFn sets a function that returns the live active connection count.
+// When set, the live count is displayed instead of the static connections value.
+func (p *ProgressBar) SetConnFn(fn func() int) {
+	p.connFn = fn
 }
 
 // Update sets the current progress.
@@ -182,9 +189,13 @@ func (p *ProgressBar) render() {
 			remaining := float64(p.total-p.current) / speed
 			eta = formatDuration(time.Duration(remaining) * time.Second)
 		}
-		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s CN:%d %s ETA %s %s\n",
+		cn := p.connections
+		if p.connFn != nil {
+			cn = p.connFn()
+		}
+		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s CN:%d %s %s ETA %s\n",
 			p.label, int(ratio*100), formatSize(p.current), formatSize(p.total),
-			p.connections, formatSpeed(speed), eta, formatDuration(elapsed))
+			cn, formatSpeed(speed), formatDuration(elapsed), eta)
 		return
 	}
 
@@ -208,9 +219,13 @@ func (p *ProgressBar) render() {
 	}
 
 	// Line layout: "\r" + label + " CN:" + conns + " [" + bar + "]" + stats
-	// Stats part after bar: " " + pct + " " + size + " " + speed + " ETA " + eta + " " + dur + "  "
-	connStr := fmt.Sprintf(" CN:%d", p.connections)
-	statsPart := fmt.Sprintf(" %s %s %s ETA %s %s  ", pctStr, sizeStr, speedStr, eta, durStr)
+	// Stats part after bar: pct size speed elapsed ETA eta
+	cn := p.connections
+	if p.connFn != nil {
+		cn = p.connFn()
+	}
+	connStr := fmt.Sprintf(" CN:%d", cn)
+	statsPart := fmt.Sprintf(" %s %s %s %s ETA %s  ", pctStr, sizeStr, speedStr, durStr, eta)
 
 	tw := termWidth()
 	// Overhead: \r(1) + label + connStr + " ["(2) + "]"(1) + statsPart

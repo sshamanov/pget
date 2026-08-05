@@ -355,6 +355,7 @@ func (r *Runner) downloadParallelFile(
 
 	if result.Size > 0 {
 		bar = progress.NewProgressBar(reporter, result.Size, progressLabel(displayURL), r.plan.Connections)
+		bar.SetConnFn(sched.ActiveCount)
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
@@ -427,6 +428,7 @@ func (r *Runner) downloadParallelStream(
 
 	if result.Size > 0 {
 		bar = progress.NewProgressBar(reporter, result.Size, progressLabel(displayURL), r.plan.Connections)
+		bar.SetConnFn(sched.ActiveCount)
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
