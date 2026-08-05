@@ -140,11 +140,18 @@ func (s *streamSink) writeLoop(ctx context.Context, w io.Writer) error {
 			s.writtenCount++
 		}
 
-		// If closed and no more data to write, exit cleanly.
-		if s.closed && s.completed[s.nextIndex] == nil {
-			s.mu.Unlock()
-			return nil
-		}
+		// If closed, verify all chunks have been written.
+			// Checking only s.completed[s.nextIndex] is insufficient when a gap
+			// exists — later chunks would be silently dropped.
+			if s.closed {
+				for idx := range s.completed {
+					s.fatalErr = fmt.Errorf("stream sink: closed with unflushed chunk %d (next expected %d)", idx, s.nextIndex)
+					s.mu.Unlock()
+					return s.fatalErr
+				}
+				s.mu.Unlock()
+				return nil
+			}
 
 		s.mu.Unlock()
 	}
