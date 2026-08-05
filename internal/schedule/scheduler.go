@@ -82,16 +82,30 @@ func New(parentCtx context.Context, cfg Config, chunks []chunk.Chunk, streamSink
 		effective = 1
 	}
 
+	// Count pre-completed chunks and skip past them for nextUndispatched.
+	preCompleted := 0
+	for _, c := range chunks {
+		if c.State == chunk.StateCompleted {
+			preCompleted++
+		}
+	}
+	nextUndispatched := 0
+	for nextUndispatched < len(chunks) && chunks[nextUndispatched].State == chunk.StateCompleted {
+		nextUndispatched++
+	}
+
 	s := &Scheduler{
-		cfg:             cfg,
-		chunks:          chunks,
-		workers:         workers,
-		effectiveTarget: effective,
-		streamSink:      streamSink,
-		hedgedChunkIdx:  -1,
-		restoreBackoff:  30 * time.Second,
-		ctx:             ctx,
-		cancel:          cancel,
+		cfg:              cfg,
+		chunks:           chunks,
+		workers:          workers,
+		effectiveTarget:  effective,
+		nextUndispatched: nextUndispatched,
+		completedCount:   preCompleted,
+		streamSink:       streamSink,
+		hedgedChunkIdx:   -1,
+		restoreBackoff:   30 * time.Second,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 	s.cond = sync.NewCond(&s.mu)
 	return s

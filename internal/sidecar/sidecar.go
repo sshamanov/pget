@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -40,7 +41,8 @@ type State struct {
 
 // Manager creates, validates, updates, and removes .pget sidecar files.
 type Manager struct {
-	path string
+	mu    sync.Mutex
+	path  string
 	state *State
 }
 
@@ -60,8 +62,11 @@ func (m *Manager) Exists() bool {
 	return err == nil
 }
 
-// Create writes a new sidecar for the given items.
+// Create writes a new sidecar for the given items and loads it into memory.
 func (m *Manager) Create(destPath string, urlListHash string, items []Item) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	state := &State{
 		Version:     Version,
 		Destination: destPath,
@@ -70,11 +75,18 @@ func (m *Manager) Create(destPath string, urlListHash string, items []Item) erro
 		UpdatedAt:   time.Now().UTC(),
 		Items:       items,
 	}
-	return m.write(state)
+	if err := m.writeLocked(state); err != nil {
+		return err
+	}
+	m.state = state
+	return nil
 }
 
 // Load reads and validates an existing sidecar.
 func (m *Manager) Load() (*State, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	data, err := os.ReadFile(m.path)
 	if err != nil {
 		return nil, fmt.Errorf("read sidecar: %w", err)
@@ -94,6 +106,9 @@ func (m *Manager) Load() (*State, error) {
 // The caller must ensure destination data is durable before calling this.
 // If no state is loaded (e.g., in tests without sidecar setup), the call is a no-op.
 func (m *Manager) MarkComplete(itemIndex int, chunkIndex int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.state == nil {
 		return nil
 	}
@@ -120,11 +135,13 @@ func (m *Manager) MarkComplete(itemIndex int, chunkIndex int) error {
 	}
 	item.Complete = allDone
 
-	return m.checkpoint()
+	return m.checkpointLocked()
 }
 
 // Remove deletes the sidecar after successful completion.
 func (m *Manager) Remove() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return os.Remove(m.path)
 }
 
@@ -144,16 +161,18 @@ func HashURLList(urls []string) string {
 	return "sha256:" + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// checkpoint atomically writes the current state.
-func (m *Manager) checkpoint() error {
+// checkpointLocked atomically writes the current state. Must be called with m.mu held.
+func (m *Manager) checkpointLocked() error {
 	if m.state == nil {
 		return fmt.Errorf("no loaded state")
 	}
 	m.state.UpdatedAt = time.Now().UTC()
-	return m.write(m.state)
+	return m.writeLocked(m.state)
 }
 
-func (m *Manager) write(state *State) error {
+// writeLocked serializes and writes state to the sidecar file atomically.
+// Must be called with m.mu held.
+func (m *Manager) writeLocked(state *State) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal sidecar: %w", err)

@@ -283,15 +283,18 @@ func (r *Runner) downloadParallelFile(
 	planner := chunk.NewPlanner(r.plan.SplitSize)
 	allChunks := planner.Plan(result.Size)
 
-	// Filter out already-completed chunks.
-	var pendingChunks []chunk.Chunk
-	for _, c := range allChunks {
-		if !completedChunks[c.Index] {
-			pendingChunks = append(pendingChunks, c)
+	// Mark already-completed chunks so the scheduler skips them.
+	// We pass ALL chunks (not filtered) so chunk indices match array positions.
+	pendingCount := 0
+	for i := range allChunks {
+		if completedChunks[allChunks[i].Index] {
+			allChunks[i].State = chunk.StateCompleted
+		} else {
+			pendingCount++
 		}
 	}
 
-	if len(pendingChunks) == 0 {
+	if pendingCount == 0 {
 		if !r.plan.Quiet {
 			fmt.Fprintf(os.Stderr, "%s: already complete\n", displayURL)
 		}
@@ -342,7 +345,7 @@ func (r *Runner) downloadParallelFile(
 		MaxTries:            r.plan.MaxTries,
 		StreamMode:          false,
 	}
-	sched := schedule.New(ctx, cfg, pendingChunks, nil)
+	sched := schedule.New(ctx, cfg, allChunks, nil)
 
 	// Set up progress reporting.
 	reporter := progress.NewReporter(r.plan.Quiet, r.plan.NoVerbose, r.plan.ProgressType)
