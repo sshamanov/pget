@@ -195,8 +195,10 @@ func (r *Runner) runOneJob(
 			state, err := sm.Load()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "pget: invalid sidecar, starting fresh: %v\n", err)
+				sm.Remove() // clean up corrupt sidecar
 			} else if state.Items[0].Length != result.Size {
 				fmt.Fprintf(os.Stderr, "pget: remote size changed, starting fresh\n")
+				sm.Remove() // clean up stale sidecar
 			} else {
 				for i, item := range state.Items {
 					_ = i
