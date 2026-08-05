@@ -34,6 +34,7 @@ func NewFileSink(path string, baseOff int64, sm *sidecar.Manager) (FileSink, err
 }
 
 // WriteChunk writes chunk data at the correct file offset using positional I/O.
+// It also updates the sidecar completion bitmap so resume works after interruption.
 func (fs *fileSink) WriteChunk(c chunk.Chunk, data []byte) error {
 	off := fs.baseOff + c.Start
 	n, err := fs.f.WriteAt(data, off)
@@ -42,6 +43,12 @@ func (fs *fileSink) WriteChunk(c chunk.Chunk, data []byte) error {
 	}
 	if int64(n) != c.Length {
 		return fmt.Errorf("short write for chunk %d: wrote %d, expected %d", c.Index, n, c.Length)
+	}
+	// Update sidecar bitmap so this chunk is remembered across restarts.
+	if fs.sidecar != nil {
+		if err := fs.sidecar.MarkComplete(0, c.Index); err != nil {
+			return fmt.Errorf("sidecar mark chunk %d: %w", c.Index, err)
+		}
 	}
 	return nil
 }
