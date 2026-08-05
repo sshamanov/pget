@@ -142,7 +142,6 @@ func (p *ProgressBar) Done() {
 	}
 	elapsed := time.Since(p.startTime)
 	if p.reporter.isTTY {
-		p.current = p.total
 		p.render()
 		fmt.Fprintln(p.reporter.out)
 	} else {
@@ -157,7 +156,7 @@ func (p *ProgressBar) completionStatus() string {
 	if p.current >= p.total {
 		return "complete"
 	}
-	return "downloaded"
+	return "interrupted"
 }
 
 func (p *ProgressBar) render() {

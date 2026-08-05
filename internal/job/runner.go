@@ -188,18 +188,16 @@ func (r *Runner) runOneJob(
 		destPath = resolveFilename(result, displayURL)
 	}
 
-	// Continue/resume handling.
+	// Resume from sidecar: always on when a valid sidecar exists.
 	completedChunks := make(map[int]bool)
-	if r.plan.ContinueMode == cli.ContinueAuto && destPath != "" {
+	if destPath != "" {
 		if sm := sidecar.NewManager(destPath); sm.Exists() {
-			// Sidecar exists: validate and resume missing chunks.
 			state, err := sm.Load()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "pget: invalid sidecar, starting fresh: %v\n", err)
 			} else if state.Items[0].Length != result.Size {
 				fmt.Fprintf(os.Stderr, "pget: remote size changed, starting fresh\n")
 			} else {
-				// Recover completed chunks from bitmap.
 				for i, item := range state.Items {
 					_ = i
 					bitmap, _ := decodeBitmap(item.CompletedBitmap, int((item.Length+item.SplitSize-1)/item.SplitSize))
@@ -214,10 +212,9 @@ func (r *Runner) runOneJob(
 						displayURL, len(completedChunks), int((result.Size+r.plan.SplitSize-1)/r.plan.SplitSize))
 				}
 			}
-		} else if _, err := os.Stat(destPath); err == nil {
-			// No sidecar, file exists: Wget-style contiguous resume from file length.
-			fi, _ := os.Stat(destPath)
-			if fi.Size() > 0 {
+		} else if r.plan.ContinueMode == cli.ContinueAuto {
+			// -c: Wget-style contiguous resume when no sidecar exists.
+			if fi, err := os.Stat(destPath); err == nil && fi.Size() > 0 {
 				return r.downloadSequential(ctx, urlStr, displayURL, httpAdapter, adapterOpts, result, destPath, nil, nil)
 			}
 		}

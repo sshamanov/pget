@@ -97,7 +97,7 @@ func Parse(args []string) (*ExecutionPlan, error) {
 			Timeout:      defaultTimeout,
 			ProgressType: defaultProgress,
 			OutputMode:   OutputFile,
-		},
+	},
 	}
 
 	remaining, err := p.parseOptions(args)
@@ -112,7 +112,7 @@ func Parse(args []string) (*ExecutionPlan, error) {
 			// In this context, it's treated as a URL placeholder; the plan
 			// handles it based on output mode.
 			continue
-		}
+	}
 		p.plan.URLs = append(p.plan.URLs, a)
 	}
 
@@ -121,13 +121,13 @@ func Parse(args []string) (*ExecutionPlan, error) {
 		data, err := os.ReadFile(p.plan.InputFile)
 		if err != nil {
 			return nil, fmt.Errorf("reading input file %s: %w", p.plan.InputFile, err)
-		}
+	}
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" && !strings.HasPrefix(line, "#") {
 				p.plan.URLs = append(p.plan.URLs, line)
 			}
-		}
+	}
 	}
 
 	if err := p.validate(); err != nil {
@@ -152,23 +152,23 @@ func (p *parser) parseOptions(args []string) ([]string, error) {
 		if stopOptions {
 			positional = append(positional, arg)
 			continue
-		}
+	}
 
 		if arg == "--" {
 			stopOptions = true
 			continue
-		}
+	}
 
 		if arg == "-" {
 			positional = append(positional, arg)
 			continue
-		}
+	}
 
 		if strings.HasPrefix(arg, "--") {
 			if err := p.parseLongOption(arg, &i, args); err != nil {
 				return nil, err
 			}
-		} else if strings.HasPrefix(arg, "-") && len(arg) > 1 && arg != "-" {
+	} else if strings.HasPrefix(arg, "-") && len(arg) > 1 && arg != "-" {
 			// Could be "-#" where # is a number (negative number), not a flag.
 			if isNegativeNumber(arg) {
 				positional = append(positional, arg)
@@ -177,9 +177,9 @@ func (p *parser) parseOptions(args []string) ([]string, error) {
 			if err := p.parseShortOptions(arg[1:], &i, args); err != nil {
 				return nil, err
 			}
-		} else {
+	} else {
 			positional = append(positional, arg)
-		}
+	}
 	}
 
 	return positional, nil
@@ -206,9 +206,9 @@ func (p *parser) parseLongOption(arg string, idx *int, args []string) error {
 		if *idx+1 < len(args) {
 			*idx++
 			value = args[*idx]
-		} else {
-			return fmt.Errorf("option '--%s' requires an argument", name)
-		}
+	} else {
+		return fmt.Errorf("option '--%s' requires an argument", name)
+	}
 	}
 
 	return p.setOption(opt, value)
@@ -231,7 +231,7 @@ func (p *parser) parseShortOptions(flags string, idx *int, args []string) error 
 			if err := p.setOption(opt, ""); err != nil {
 				return err
 			}
-		}
+	}
 		return nil
 	}
 
@@ -239,7 +239,7 @@ func (p *parser) parseShortOptions(flags string, idx *int, args []string) error 
 		r, _ := utf8.DecodeRuneInString(flags[i:])
 		if r == utf8.RuneError {
 			continue
-		}
+	}
 
 		var opt *option
 		for j := range options {
@@ -247,10 +247,10 @@ func (p *parser) parseShortOptions(flags string, idx *int, args []string) error 
 				opt = &options[j]
 				break
 			}
-		}
+	}
 		if opt == nil {
-			return fmt.Errorf("invalid option -- '%c'", r)
-		}
+		return fmt.Errorf("invalid option -- '%c'", r)
+	}
 
 		value := ""
 		if opt.ArgName != "" {
@@ -267,10 +267,10 @@ func (p *parser) parseShortOptions(flags string, idx *int, args []string) error 
 					return fmt.Errorf("option '-%c' requires an argument", r)
 				}
 			}
-		}
+	}
 		if err := p.setOption(opt, value); err != nil {
 			return err
-		}
+	}
 	}
 	return nil
 }
@@ -306,9 +306,9 @@ func (p *parser) setOption(opt *option, value string) error {
 		p.plan.OutputFile = value
 		if value == "-" {
 			p.plan.OutputMode = OutputStdout
-		} else {
+	} else {
 			p.plan.OutputMode = OutputSingle
-		}
+	}
 	case "continue":
 		p.plan.ContinueMode = ContinueAuto
 	case "no-clobber":
@@ -322,26 +322,26 @@ func (p *parser) setOption(opt *option, value string) error {
 	case "tries":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 {
-			return fmt.Errorf("invalid number of tries: %s", value)
-		}
+		return fmt.Errorf("invalid number of tries: %s", value)
+	}
 		p.plan.MaxTries = n
 	case "timeout":
 		d, err := parseSeconds(value)
 		if err != nil {
-			return fmt.Errorf("invalid timeout: %s", value)
-		}
+		return fmt.Errorf("invalid timeout: %s", value)
+	}
 		p.plan.Timeout = d
 	case "connect-timeout":
 		d, err := parseSeconds(value)
 		if err != nil {
-			return fmt.Errorf("invalid connect timeout: %s", value)
-		}
+		return fmt.Errorf("invalid connect timeout: %s", value)
+	}
 		p.plan.ConnectTimeout = d
 	case "read-timeout":
 		d, err := parseSeconds(value)
 		if err != nil {
-			return fmt.Errorf("invalid read timeout: %s", value)
-		}
+		return fmt.Errorf("invalid read timeout: %s", value)
+	}
 		p.plan.ReadTimeout = d
 	case "retry-connrefused":
 		p.plan.RetryConnRefused = true
@@ -353,7 +353,7 @@ func (p *parser) setOption(opt *option, value string) error {
 				return fmt.Errorf("invalid HTTP error code: %s", strings.TrimSpace(c))
 			}
 			p.plan.RetryOnHTTPError = append(p.plan.RetryOnHTTPError, code)
-		}
+	}
 	case "content-disposition":
 		p.plan.ContentDisposition = true
 	case "no-use-server-timestamps":
@@ -381,20 +381,20 @@ func (p *parser) setOption(opt *option, value string) error {
 	case "connections":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 {
-			return fmt.Errorf("invalid number of connections: %s", value)
-		}
+		return fmt.Errorf("invalid number of connections: %s", value)
+	}
 		p.plan.Connections = n
 	case "split-size":
 		n, err := parseSize(value)
 		if err != nil {
-			return fmt.Errorf("invalid split size: %s", value)
-		}
+		return fmt.Errorf("invalid split size: %s", value)
+	}
 		p.plan.SplitSize = n
 	case "buffer-size":
 		n, err := parseSize(value)
 		if err != nil {
-			return fmt.Errorf("invalid buffer size: %s", value)
-		}
+		return fmt.Errorf("invalid buffer size: %s", value)
+	}
 		p.plan.BufferSize = n
 	case "no-parallel":
 		p.plan.NoParallel = true
@@ -417,7 +417,7 @@ func (p *parser) validate() error {
 				return fmt.Errorf("invalid header format: %s (expected 'Name: Value')", h)
 			}
 			p.plan.ExtraHeaders[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-		}
+	}
 	}
 
 	// Validate parallel settings.
@@ -432,6 +432,7 @@ func (p *parser) validate() error {
 	}
 
 	// Validate output modes.
+
 	if p.plan.OutputMode == OutputStdout && p.plan.ContinueMode == ContinueAuto {
 		return fmt.Errorf("cannot use --continue with stdout output")
 	}
@@ -451,7 +452,7 @@ func isNegativeNumber(s string) bool {
 	for _, c := range s[1:] {
 		if c < '0' || c > '9' {
 			return false
-		}
+	}
 	}
 	return true
 }
@@ -482,7 +483,7 @@ func parseSize(s string) (int64, error) {
 		if c < '0' || c > '9' {
 			s = s[:i]
 			break
-		}
+	}
 	}
 
 	n, err := strconv.ParseInt(s, 10, 64)
