@@ -193,9 +193,9 @@ func (p *ProgressBar) render() {
 		if p.connFn != nil {
 			cn = p.connFn()
 		}
-		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s CN:%d %s %s ETA %s\n",
+		fmt.Fprintf(p.reporter.out, "%s: %d%% %s/%s CN:%d %s ETA %s\n",
 			p.label, int(ratio*100), formatSize(p.current), formatSize(p.total),
-			cn, formatSpeed(speed), formatDuration(elapsed), eta)
+			cn, formatSpeed(speed), eta)
 		return
 	}
 
@@ -211,7 +211,6 @@ func (p *ProgressBar) render() {
 	pctStr := fmt.Sprintf("%d%%", int(ratio*100))
 	sizeStr := fmt.Sprintf("%s/%s", formatSize(p.current), formatSize(p.total))
 	speedStr := formatSpeed(speed)
-	durStr := formatDuration(elapsed)
 	eta := "---"
 	if speed > 0 {
 		remaining := float64(p.total-p.current) / speed
@@ -219,13 +218,13 @@ func (p *ProgressBar) render() {
 	}
 
 	// Line layout: "\r" + label + " CN:" + conns + " [" + bar + "]" + stats
-	// Stats part after bar: pct size speed elapsed ETA eta
+	// Stats part after bar: pct size speed ETA eta
 	cn := p.connections
 	if p.connFn != nil {
 		cn = p.connFn()
 	}
 	connStr := fmt.Sprintf(" CN:%d", cn)
-	statsPart := fmt.Sprintf(" %s %s %s %s ETA %s  ", pctStr, sizeStr, speedStr, durStr, eta)
+	statsPart := fmt.Sprintf(" %s %s %s ETA %s  ", pctStr, sizeStr, speedStr, eta)
 
 	tw := termWidth()
 	// Overhead: \r(1) + label + connStr + " ["(2) + "]"(1) + statsPart
