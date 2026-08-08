@@ -41,11 +41,12 @@ type Chunk struct {
 	Length      int64
 	State       State
 	Attempts    int
-	WorkerSlot  int // -1 if unassigned
-	StartTime   time.Time
-	BytesRecv   int64
+	WorkerSlot   int // -1 if unassigned
+	StartTime    time.Time
+	RetryAfter   time.Time // when retry backoff expires (zero if immediate)
+	BytesRecv    int64
 	LastProgress time.Time
-	Hedged      bool
+	Hedged       bool
 }
 
 // Planner produces chunk layouts for a given object size and split size.

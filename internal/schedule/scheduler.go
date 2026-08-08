@@ -108,7 +108,28 @@ func New(parentCtx context.Context, cfg Config, chunks []chunk.Chunk, streamSink
 		cancel:           cancel,
 	}
 	s.cond = sync.NewCond(&s.mu)
+
+	// Periodic wakeup to retry chunks whose backoff has expired, even when
+	// all workers are idle (preventing a deadlock where nothing broadcasts).
+	go s.retryTicker()
+
 	return s
+}
+
+// retryTicker periodically broadcasts to wake workers for backoff expiry checks.
+func (s *Scheduler) retryTicker() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.mu.Lock()
+			s.cond.Broadcast()
+			s.mu.Unlock()
+		case <-s.ctx.Done():
+			return
+		}
+	}
 }
 
 // Context returns the scheduler's context, cancelled on fatal error.
@@ -197,6 +218,7 @@ func (s *Scheduler) MarkFailed(idx int, retryable bool) {
 
 	if retryable && c.Attempts < s.cfg.MaxTries {
 		c.State = chunk.StateRetryWait
+		c.RetryAfter = time.Now().Add(retryBackoff(c.Attempts))
 	} else {
 		c.State = chunk.StateFailed
 		s.fatalErr = fmt.Errorf("chunk %d exhausted retries (%d attempts of max %d)", idx, c.Attempts, s.cfg.MaxTries)
@@ -306,10 +328,24 @@ func (s *Scheduler) tryAssign(workerSlot int) *chunk.Chunk {
 	return nil
 }
 
+// retryBackoff returns the delay before retrying a chunk after a failure.
+// Exponential: 1s, 2s, 4s, 8s, 16s, capped at 30s.
+func retryBackoff(attempts int) time.Duration {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	delay := time.Duration(1<<uint(attempts-1)) * time.Second
+	if delay > 30*time.Second {
+		delay = 30 * time.Second
+	}
+	return delay
+}
+
 func (s *Scheduler) findRetryableChunk() *chunk.Chunk {
+	now := time.Now()
 	for i := range s.chunks {
 		c := &s.chunks[i]
-		if c.State == chunk.StateRetryWait {
+		if c.State == chunk.StateRetryWait && !c.RetryAfter.After(now) {
 			return c
 		}
 	}
