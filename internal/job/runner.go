@@ -450,9 +450,14 @@ func (r *Runner) downloadParallelStream(
 	// Signal the writer that all chunks are done.
 	streamSink.Close()
 
-	if werr := <-writeErr; werr != nil && ec == ExitSuccess {
+	// Always wait for and check the write error. A write error means
+	// the output is truncated — surface it regardless of exit code so
+	// the user knows the downstream pipe got incomplete data.
+	if werr := <-writeErr; werr != nil {
 		fmt.Fprintf(os.Stderr, "pget: write error: %v\n", werr)
-		return ExitIOError
+		if ec == ExitSuccess {
+			ec = ExitIOError
+		}
 	}
 
 	// Finalize progress bar.
@@ -597,6 +602,7 @@ func (r *Runner) runWorkers(
 	}
 
 	if firstErr != nil {
+		fmt.Fprintf(os.Stderr, "pget: %v\n", firstErr)
 		errStr := firstErr.Error()
 		switch {
 		case strings.Contains(errStr, "TLS") || strings.Contains(errStr, "certificate"):
@@ -612,6 +618,7 @@ func (r *Runner) runWorkers(
 
 	completed, total := sched.Progress()
 	if completed < total {
+		fmt.Fprintf(os.Stderr, "pget: download incomplete: %d/%d chunks transferred\n", completed, total)
 		return ExitNetworkFail
 	}
 	return ExitSuccess

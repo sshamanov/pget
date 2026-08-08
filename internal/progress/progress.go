@@ -148,13 +148,16 @@ func (p *ProgressBar) Done() {
 		return
 	}
 	elapsed := time.Since(p.startTime)
+	speed := float64(p.current) / elapsed.Seconds()
+	status := p.completionStatus()
 	if p.reporter.isTTY {
 		p.render()
-		fmt.Fprintln(p.reporter.out)
+		fmt.Fprintf(p.reporter.out, "\n%s %s/%s in %s (%s)\n",
+			status, formatSize(p.current), formatSize(p.total),
+			formatDuration(elapsed), formatSpeed(speed))
 	} else {
-		speed := float64(p.current) / elapsed.Seconds()
 		fmt.Fprintf(p.reporter.out, "%s: %s %s/%s in %s (%s)\n",
-			p.label, p.completionStatus(), formatSize(p.current), formatSize(p.total),
+			p.label, status, formatSize(p.current), formatSize(p.total),
 			formatDuration(elapsed), formatSpeed(speed))
 	}
 }
