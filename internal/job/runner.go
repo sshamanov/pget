@@ -188,6 +188,18 @@ func (r *Runner) runOneJob(
 		destPath = resolveFilename(result, displayURL)
 	}
 
+	// Use the post-redirect URL for all subsequent requests.  Each chunk
+	// request that hits the origin server would otherwise follow the same
+	// redirect; using the final URL avoids a round-trip per chunk and
+	// prevents the origin server from becoming a bottleneck.
+	effectiveURL := urlStr
+	if result.Meta.FinalURL != "" && result.Meta.FinalURL != urlStr {
+		effectiveURL = result.Meta.FinalURL
+		if !r.plan.Quiet {
+			fmt.Fprintf(os.Stderr, "%s: resolved to %s\n", displayURL, effectiveURL)
+		}
+	}
+
 	// Resume from sidecar: always on when a valid sidecar exists.
 	completedChunks := make(map[int]bool)
 	if destPath != "" {
@@ -217,7 +229,7 @@ func (r *Runner) runOneJob(
 		} else if r.plan.ContinueMode == cli.ContinueAuto {
 			// -c: Wget-style contiguous resume when no sidecar exists.
 			if fi, err := os.Stat(destPath); err == nil && fi.Size() > 0 {
-				return r.downloadSequential(ctx, urlStr, displayURL, httpAdapter, adapterOpts, result, destPath, nil, nil)
+				return r.downloadSequential(ctx, effectiveURL, displayURL, httpAdapter, adapterOpts, result, destPath, nil, nil)
 			}
 		}
 	}
@@ -234,15 +246,15 @@ func (r *Runner) runOneJob(
 	}
 
 	if useParallel && !isStreamMode {
-		return r.downloadParallelFile(ctx, urlStr, displayURL, destPath, httpAdapter, adapterOpts, result, outputBaseOffset, completedChunks)
+		return r.downloadParallelFile(ctx, effectiveURL, displayURL, destPath, httpAdapter, adapterOpts, result, outputBaseOffset, completedChunks)
 	}
 
 	if useParallel && isStreamMode {
-		return r.downloadParallelStream(ctx, urlStr, displayURL, httpAdapter, adapterOpts, result, outputFile)
+		return r.downloadParallelStream(ctx, effectiveURL, displayURL, httpAdapter, adapterOpts, result, outputFile)
 	}
 
 	// Sequential fallback.
-	return r.downloadSequential(ctx, urlStr, displayURL, httpAdapter, adapterOpts, result, destPath, outputFile, outputBaseOffset)
+	return r.downloadSequential(ctx, effectiveURL, displayURL, httpAdapter, adapterOpts, result, destPath, outputFile, outputBaseOffset)
 }
 
 func (r *Runner) checkTimestamp(
