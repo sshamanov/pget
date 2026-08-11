@@ -18,7 +18,11 @@ func init() {
 		return
 	}
 	if info, ok := debug.ReadBuildInfo(); ok {
+		// VCS revision from local git checkout.
 		if rev, ok := vcsRevision(info); ok {
+			Commit = rev
+		} else if rev := commitFromPseudoVersion(info.Main.Version); rev != "" {
+			// go install via proxy: no .git, but pseudo-version embeds the hash.
 			Commit = rev
 		}
 		if info.Main.Version != "" && info.Main.Version != "(devel)" {
@@ -36,13 +40,14 @@ func String() string {
 		}
 		return fmt.Sprintf("pget %s", Version)
 	}
-	// Local build with VCS info — show commit only.
+	// Local/git or go-install build — show commit only.
 	if Commit != "unknown" {
 		return fmt.Sprintf("pget %s", Commit)
 	}
 	return "pget dev (unknown)"
 }
 
+// vcsRevision extracts the short git revision from Go's embedded build settings.
 func vcsRevision(info *debug.BuildInfo) (string, bool) {
 	for _, s := range info.Settings {
 		if s.Key == "vcs.revision" {
@@ -54,4 +59,20 @@ func vcsRevision(info *debug.BuildInfo) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// commitFromPseudoVersion extracts the commit hash from a Go pseudo-version.
+// Pseudo-versions have the form "v0.0.0-yyyymmddhhmmss-abcdefabcdef".
+func commitFromPseudoVersion(v string) string {
+	if !strings.HasPrefix(v, "v0.0.0-") {
+		return ""
+	}
+	// Last segment is the 12-char commit hash.
+	if idx := strings.LastIndex(v, "-"); idx >= 0 {
+		hash := v[idx+1:]
+		if len(hash) >= 7 {
+			return hash[:7]
+		}
+	}
+	return ""
 }
