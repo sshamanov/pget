@@ -279,7 +279,7 @@ func (p *parser) setOption(opt *option, value string) error {
 	switch opt.Long {
 	// Startup
 	case "version":
-		fmt.Printf("pget %s (%s)\n", version.Version, version.Commit)
+		fmt.Println(version.String())
 		os.Exit(0)
 	case "help":
 		printHelp()
