@@ -34,6 +34,7 @@ jobs:
         with:
           name: pget
           path: bin/pget
+          retention-days: 7
 
       - name: Upload binary to file service
         if: ${{ github.event_name == 'push' && env.FILESERVICE_URL != '' }}
